@@ -5,15 +5,19 @@ using SharpRTSPServer.Logging;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.ComponentModel.Design;
 using System.Diagnostics;
 using System.Diagnostics.Contracts;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices.ComTypes;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using static System.Collections.Specialized.BitVector32;
 
 namespace SharpRTSPServer
 {
@@ -171,10 +175,10 @@ namespace SharpRTSPServer
                     // Add the RtspListener to the RTSPConnections List
                     lock (_connectionList)
                     {
-                        RTSPConnection newConnection = new RTSPConnection()
+                        RTSPConnection newConnection = new RTSPConnection(SSRC)
                         {
                             Listener = newListener,
-                            SSRC = SSRC,
+                            //SSRC = SSRC,
                         };
                         _connectionList.Add(newConnection);
                     }
@@ -309,8 +313,23 @@ namespace SharpRTSPServer
                     {
                         // Search for the Session in the Sessions List. Change the state to "PLAY"
                         const string range = "npt=0-"; // Playing the 'video' from 0 seconds until the end
-                        string rtpInfo = "url=" + message.RtspUri + ";seq=" + connection.Video.SequenceNumber; // TODO Add rtptime  +";rtptime="+session.rtpInitialTimestamp;
-                        rtpInfo += ",url=" + message.RtspUri + ";seq=" + connection.Audio.SequenceNumber; // TODO Add rtptime  +";rtptime="+session.rtpInitialTimestamp;
+                        //string rtpInfo = "url=" + message.RtspUri + ";seq=" + connection.Video.SequenceNumber; // TODO Add rtptime  +";rtptime="+session.rtpInitialTimestamp;
+                        //rtpInfo += ",url=" + message.RtspUri + ";seq=" + connection.Audio.SequenceNumber; // TODO Add rtptime  +";rtptime="+session.rtpInitialTimestamp;
+
+                        string baseUrl = message.RtspUri.ToString().TrimEnd('/');
+
+                        //string rtpInfo =
+                        //    $"url={baseUrl}/trackID=0;" +
+                        //    $"seq={connection.Video.SequenceNumber};" +
+                        //    $"rtptime={connection.Video.LastRtpTimestamp}," +
+                        //    $"url={baseUrl}/trackID=1;" +
+                        //    $"seq={connection.Audio.SequenceNumber};" +
+                        //    $"rtptime={connection.Audio.LastRtpTimestamp}"
+
+                            string rtpInfo =
+                            $"url={baseUrl}/trackID=0;" +
+                            $"seq={connection.Video.SequenceNumber};" +
+                            $"rtptime={connection.Video.LastRtpTimestamp}";
 
                         // 'RTP-Info: url=rtsp://192.168.1.195:8557/h264/track1;seq=33026;rtptime=3014957579,url=rtsp://192.168.1.195:8557/h264/track2;seq=42116;rtptime=3335975101'
 
@@ -353,6 +372,37 @@ namespace SharpRTSPServer
             }
         }
 
+        private static bool TryGetTrackIdFromSetup(RtspRequestSetup setupMessage, out uint trackId)
+        {
+            trackId = 0;
+
+            if (setupMessage?.RtspUri == null)
+                return false;
+
+            // Exemplo de AbsolutePath:
+            // /cam01/trackID=0
+            var path = setupMessage.RtspUri.AbsolutePath;
+
+            const string marker = "trackID=";
+            int idx = path.LastIndexOf(marker, StringComparison.OrdinalIgnoreCase);
+
+            if (idx < 0)
+                return false;
+
+            idx += marker.Length;
+
+            // Extrai somente os dígitos após trackID=
+            int start = idx;
+            while (idx < path.Length && char.IsDigit(path[idx]))
+                idx++;
+
+            if (start == idx)
+                return false;
+
+            return uint.TryParse(path.Substring(start, idx - start), out trackId);
+        }
+
+        
         private void HandleSetup(RtspListener listener, RtspRequestSetup setupMessage)
         {
             // Check the RTSP transport
@@ -367,6 +417,20 @@ namespace SharpRTSPServer
             RtspTransport transportReply = null;
             IRtpTransport rtpTransport = null;
 
+            uint currentSSRC = 0;
+            if (!TryGetTrackIdFromSetup(setupMessage, out uint trackId))
+            {
+                _logger.LogDebug("Could not get trackID from setup command. Using SSRC from CurrentConneciton. SSRC = {currentSSRC}", SSRC);
+            }
+            var con = _connectionList.FirstOrDefault(c => c.Listener == listener);
+            currentSSRC = con.Streams.ElementAt((int)trackId)?.SSRC ?? SSRC;
+            //if (trackId == (int)TrackType.Video)
+            //    currentSSRC = con.Streams.ElementAt((int)trackId)?.SSRC ?? SSRC;
+            //else if(trackId == (int)TrackType.Audio)
+            //    currentSSRC = _connectionList.FirstOrDefault(c => c.Streams.Any(s => s == c.Audio))?.SSRC ?? SSRC;
+            //else
+            //    currentSSRC = SSRC;
+
             if (transport.LowerTransport == RtspTransport.LowerTransportType.TCP)
             {
                 Debug.Assert(transport.Interleaved != null, "If transport.Interleaved is null here the program did not handle well connection problem");
@@ -375,10 +439,12 @@ namespace SharpRTSPServer
                     DataChannel = transport.Interleaved.First,
                     ControlChannel = transport.Interleaved.Second,
                 };
+                
+
                 // RTP over RTSP mode
                 transportReply = new RtspTransport()
                 {
-                    SSrc = SSRC.ToString("X8"), // Convert to Hex, padded to 8 characters
+                    SSrc = currentSSRC.ToString("X8"), // Convert to Hex, padded to 8 characters
                     LowerTransport = RtspTransport.LowerTransportType.TCP,
                     Interleaved = new PortCouple(transport.Interleaved.First, transport.Interleaved.Second)
                 };
@@ -405,7 +471,7 @@ namespace SharpRTSPServer
                 // Pass the Port of the two sockets back in the reply
                 transportReply = new RtspTransport()
                 {
-                    SSrc = SSRC.ToString("X8"), // Convert to Hex, padded to 8 characters
+                    SSrc = currentSSRC.ToString("X8"), // Convert to Hex, padded to 8 characters
                     LowerTransport = RtspTransport.LowerTransportType.UDP,
                     IsMulticast = false,
                     ServerPort = new PortCouple(udpPair.DataPort, udpPair.ControlPort),
@@ -421,7 +487,7 @@ namespace SharpRTSPServer
                 // Pass the Ports of the two sockets back in the reply
                 transportReply = new RtspTransport()
                 {
-                    SSrc = SSRC.ToString("X8"), // Convert to Hex, padded to 8 characters
+                    SSrc = currentSSRC.ToString("X8"), // Convert to Hex, padded to 8 characters
                     LowerTransport = RtspTransport.LowerTransportType.UDP,
                     IsMulticast = true,
                     Port = new PortCouple(7000, 7001)  // FIX
@@ -452,6 +518,7 @@ namespace SharpRTSPServer
                                       // found the connection
                                       // Add the transports to the stream
                         stream.RtpChannel = rtpTransport;
+
                         // When there is Video and Audio there are two SETUP commands.
                         // For the first SETUP command we will generate the connection.sessionId and return a SessionID in the Reply.
                         // For the 2nd command the client will send is the SessionID.
@@ -586,7 +653,7 @@ namespace SharpRTSPServer
                 stream.SequenceNumber++;
 
                 // Add the specific SSRC for each transmission
-                RTPPacketUtil.WriteSSRC(rtpPacket.Span, connection.SSRC);
+                RTPPacketUtil.WriteSSRC(rtpPacket.Span, stream.SSRC);
 
                 //Debug.Assert(connection.Streams[streamType].RtpChannel != null, "If connection.Streams[streamType].RtpChannel is null here the program did not handle well connection problem");
                 try
@@ -633,7 +700,7 @@ namespace SharpRTSPServer
                 const bool hasPadding = false;
                 const int reportCount = 0; // an empty report
                 int length = (rtcpSenderReport.Length / 4) - 1; // num 32 bit words minus 1
-                RTCPUtils.WriteRTCPHeader(rtcpSenderReport, RTCPUtils.RTCP_VERSION, hasPadding, reportCount, RTCPUtils.RTCP_PACKET_TYPE_SENDER_REPORT, length, connection.SSRC);
+                RTCPUtils.WriteRTCPHeader(rtcpSenderReport, RTCPUtils.RTCP_VERSION, hasPadding, reportCount, RTCPUtils.RTCP_PACKET_TYPE_SENDER_REPORT, length, stream.SSRC);
                 RTCPUtils.WriteSenderReport(rtcpSenderReport, DateTime.UtcNow, rtpTimestamp, stream.RtpPacketCount, stream.OctetCount);
                 return SendRawRTCP(connection, stream, rtcpSenderReport);
 
@@ -795,6 +862,8 @@ namespace SharpRTSPServer
                             continue;
                         }
                     }
+
+                    stream.LastRtpTimestamp = rtpTimestamp;
 
                     SendRawRTP(connection, stream, rtpPackets);
                 }

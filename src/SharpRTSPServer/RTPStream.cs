@@ -1,4 +1,5 @@
 ﻿using Rtsp;
+using System;
 
 namespace SharpRTSPServer
 {
@@ -7,6 +8,7 @@ namespace SharpRTSPServer
     /// </summary>
     public class RTPStream
     {
+        private static readonly Random _rand = new Random();
         /// <summary>
         /// When true will send out a RTCP packet to match Wall Clock Time to RTP Payload timestamps.
         /// </summary>
@@ -36,5 +38,32 @@ namespace SharpRTSPServer
         /// Number of bytes of video that have been transmitted (for average bandwidth monitoring)
         /// </summary>
         public uint OctetCount { get; set; } = 0;
+
+        /// <summary>
+        /// Gets or sets the Synchronization Source(SSRC) identifier.
+        /// This 32-bit value uniquely identifies the source of a stream within an RTP session.
+        /// </summary>
+        public uint SSRC { get; set; }
+
+        public uint LastRtpTimestamp { get; set; }
+        public RTPStream(uint? Ssrc, uint? rtpTimestamp)
+        {
+            if (Ssrc.HasValue)
+            {
+                SSRC = Ssrc.Value;
+            }
+            else
+            {
+                SSRC = (uint)_rand.Next(0, int.MaxValue);
+            }
+            if (rtpTimestamp.HasValue)
+            {
+                LastRtpTimestamp = rtpTimestamp.Value;
+            }
+            else
+            {
+                LastRtpTimestamp = (uint)_rand.Next(1, int.MaxValue);
+            }
+        }
     }
 }

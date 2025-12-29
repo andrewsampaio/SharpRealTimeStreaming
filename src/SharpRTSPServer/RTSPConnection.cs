@@ -43,18 +43,28 @@ namespace SharpRTSPServer
         /// </summary>
         public RTPStream Audio { get { return Streams[(int)TrackType.Audio]; } }
 
-        public RTPStream[] Streams { get; } = new RTPStream[]
-        {
-            new RTPStream(),
-            new RTPStream()
-        };
+        public RTPStream[] Streams { get; }
 
+        public bool HasSentPreroll { get; set; }
+
+        public uint InitialRtpTimestamp { get; set; }
         /// <summary>
         /// Update the keepalive.
         /// </summary>
         public void UpdateKeepAlive()
         {
             TimeSinceLastRtspKeepAlive = DateTime.UtcNow;
+        }
+
+        public RTSPConnection(uint Ssrc)
+        {
+            SSRC = Ssrc;
+            InitialRtpTimestamp = (uint)_rand.Next(1, int.MaxValue);
+            Streams  = new RTPStream[]
+             {
+                new RTPStream(Ssrc, InitialRtpTimestamp),
+                new RTPStream(null, InitialRtpTimestamp)
+             };
         }
     }
 }
