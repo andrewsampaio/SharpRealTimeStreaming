@@ -313,8 +313,8 @@ namespace SharpRTSPServer
                     {
                         // Search for the Session in the Sessions List. Change the state to "PLAY"
                         const string range = "npt=0-"; // Playing the 'video' from 0 seconds until the end
-                        //string rtpInfo = "url=" + message.RtspUri + ";seq=" + connection.Video.SequenceNumber; // TODO Add rtptime  +";rtptime="+session.rtpInitialTimestamp;
-                        //rtpInfo += ",url=" + message.RtspUri + ";seq=" + connection.Audio.SequenceNumber; // TODO Add rtptime  +";rtptime="+session.rtpInitialTimestamp;
+                        string rtpInfo = "url=" + message.RtspUri + ";seq=" + connection.Video.SequenceNumber; // TODO Add rtptime  +";rtptime="+session.rtpInitialTimestamp;
+                        rtpInfo += ",url=" + message.RtspUri + ";seq=" + connection.Audio.SequenceNumber; // TODO Add rtptime  +";rtptime="+session.rtpInitialTimestamp;
 
                         string baseUrl = message.RtspUri.ToString().TrimEnd('/');
 
@@ -326,10 +326,10 @@ namespace SharpRTSPServer
                         //    $"seq={connection.Audio.SequenceNumber};" +
                         //    $"rtptime={connection.Audio.LastRtpTimestamp}"
 
-                            string rtpInfo =
-                            $"url={baseUrl}/trackID=0;" +
-                            $"seq={connection.Video.SequenceNumber};" +
-                            $"rtptime={connection.Video.LastRtpTimestamp}";
+                            //string rtpInfo =
+                            //$"url={baseUrl}/trackID=0;" +
+                            //$"seq={connection.Video.SequenceNumber};" +
+                            //$"rtptime={connection.Video.LastRtpTimestamp}";
 
                         // 'RTP-Info: url=rtsp://192.168.1.195:8557/h264/track1;seq=33026;rtptime=3014957579,url=rtsp://192.168.1.195:8557/h264/track2;seq=42116;rtptime=3335975101'
 
@@ -424,12 +424,7 @@ namespace SharpRTSPServer
             }
             var con = _connectionList.FirstOrDefault(c => c.Listener == listener);
             currentSSRC = con.Streams.ElementAt((int)trackId)?.SSRC ?? SSRC;
-            //if (trackId == (int)TrackType.Video)
-            //    currentSSRC = con.Streams.ElementAt((int)trackId)?.SSRC ?? SSRC;
-            //else if(trackId == (int)TrackType.Audio)
-            //    currentSSRC = _connectionList.FirstOrDefault(c => c.Streams.Any(s => s == c.Audio))?.SSRC ?? SSRC;
-            //else
-            //    currentSSRC = SSRC;
+            
 
             if (transport.LowerTransport == RtspTransport.LowerTransportType.TCP)
             {

@@ -5,6 +5,9 @@ namespace SharpRTSPServer
 {
     /// <summary>
     /// An RTPStream can be a Video Stream, Audio Stream or a Metadata Stream.
+    /// ffmpeg -rtsp_transport tcp -i rtsp://camera/stream -vf "drawbox=x=100:y=100:w=200:h=150:color=red@0.8:thickness=3" -c:v libx264 -preset ultrafast -tune zerolatency -f rtsp rtsp://127.0.0.1:8555/live
+    /// ffmpeg -stdin 1 -f dshow -rtbufsize 64M -i video = "HD Pro Webcam C920" -vf "sendcmd=filename=pipe\\:0,drawbox" -c:v libx264 -preset ultrafast -tune zerolatency -f rtsp rtsp://localhost:8554/stream1
+
     /// </summary>
     public class RTPStream
     {
