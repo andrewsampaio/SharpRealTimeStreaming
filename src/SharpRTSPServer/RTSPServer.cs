@@ -350,8 +350,19 @@ namespace SharpRTSPServer
                     {
                         // Search for the Session in the Sessions List. Change the state to "PLAY"
                         const string range = "npt=0-"; // Playing the 'video' from 0 seconds until the end
+                        /*
                         string rtpInfo = "url=" + message.RtspUri + ";seq=" + connection.Video.SequenceNumber; // TODO Add rtptime  +";rtptime="+session.rtpInitialTimestamp;
                         rtpInfo += ",url=" + message.RtspUri + ";seq=" + connection.Audio.SequenceNumber; // TODO Add rtptime  +";rtptime="+session.rtpInitialTimestamp;
+                        if (connection.Metadata != null && connection.Metadata.RtpChannel != null)
+                            //rtpInfo += $",url={message.RtspUri}/trackID={streamSource.MetadataTrack.ID};seq={connection.Metadata.SequenceNumber}";
+                            rtpInfo += $",url={message.RtspUri};seq={connection.Metadata.SequenceNumber}";
+                        */
+                        string rtpInfo = $"url={message.RtspUri}/trackID={streamSource.VideoTrack.ID}" + ";seq=" + connection.Video.SequenceNumber + ";rtpTime=" + connection.Video.CurrentRtpTimestamp; // TODO Add rtptime  +";rtptime="+session.rtpInitialTimestamp;
+                        if (connection.Audio != null && connection.Audio.RtpChannel != null)
+                            rtpInfo += $",url={message.RtspUri}/trackID={streamSource.AudioTrack.ID}" + ";seq=" + connection.Audio.SequenceNumber + ";rtpTime=" + connection.Audio.CurrentRtpTimestamp; ; // TODO Add rtptime  +";rtptime="+session.rtpInitialTimestamp;
+                        if (connection.Metadata != null && connection.Metadata.RtpChannel != null)
+                            rtpInfo += $",url={message.RtspUri}/trackID={streamSource.MetadataTrack.ID};seq={connection.Metadata.SequenceNumber};rtptime={connection.Metadata.CurrentRtpTimestamp}";
+                            
 
                         // 'RTP-Info: url=rtsp://192.168.1.195:8557/h264/track1;seq=33026;rtptime=3014957579,url=rtsp://192.168.1.195:8557/h264/track2;seq=42116;rtptime=3335975101'
 
@@ -362,7 +373,8 @@ namespace SharpRTSPServer
                         listener.SendMessage(playResponse);
 
                         connection.Video.MustSendRtcpPacket = true;
-                        connection.Audio.MustSendRtcpPacket = true;
+                        if (connection.Audio != null) connection.Audio.MustSendRtcpPacket = true;
+                        if (connection.Metadata != null) connection.Metadata.MustSendRtcpPacket = true;
 
                         // Allow video and audio to go to this client
                         connection.Play = true;
@@ -426,6 +438,10 @@ namespace SharpRTSPServer
             else if (streamSource.AudioTrack != null && setupMessage.RtspUri.AbsolutePath.EndsWith($"trackID={streamSource.AudioTrack.ID}"))
             {
                 trackSSRC = streamSource.AudioTrack.SSRC;
+            }
+            else if (streamSource.MetadataTrack != null && setupMessage.RtspUri.AbsolutePath.EndsWith($"trackID={streamSource.MetadataTrack.ID}"))
+            {
+                trackSSRC = streamSource.MetadataTrack.SSRC;
             }
             else
             {
@@ -527,6 +543,10 @@ namespace SharpRTSPServer
                         {
                             stream = setupConnection.Audio;
                         }
+                        else if (setupMessage.RtspUri.AbsolutePath.EndsWith($"trackID={streamSource.MetadataTrack?.ID}"))
+                        {
+                            stream = setupConnection.Metadata;
+                        }
                         else
                         {
                             continue;// error case - track unknown
@@ -574,7 +594,7 @@ namespace SharpRTSPServer
             var StreamSource = GetStreamSource(message.RtspUri);
 
             // if the SPS and PPS are not defined yet, we have to return an error
-            if (StreamSource.VideoTrack == null || !StreamSource.VideoTrack.IsReady || (StreamSource.AudioTrack != null && !StreamSource.AudioTrack.IsReady))
+            if (StreamSource.VideoTrack == null || !StreamSource.VideoTrack.IsReady || (StreamSource.AudioTrack != null && !StreamSource.AudioTrack.IsReady) || (StreamSource.MetadataTrack != null && !StreamSource.MetadataTrack.IsReady))
             {
                 RtspResponse describeResponse2 = message.CreateResponse();
                 describeResponse2.ReturnCode = 400; // 400 Bad Request
@@ -670,6 +690,19 @@ namespace SharpRTSPServer
                 }
             }
 
+            // METADATA
+            if (streamSource.MetadataTrack != null)
+            {
+                streamSource.MetadataTrack.BuildSDP(sdp);
+
+                if (streamSource.MetadataTrack.RtpProfile == RtpProfiles.SAVP)
+                {
+                    var masterKeySalt = connection.Metadata.PrepareSrtpContext(SrtpCryptoSuite);
+                    // appending a zero byte at the end to yield always positive value of the BigInteger
+                    sdp.AppendLine($"a=crypto:1 {SrtpCryptoSuite} inline:{Convert.ToBase64String(masterKeySalt)}");
+                }
+            }
+
             return sdp.ToString();
         }
 
@@ -680,7 +713,7 @@ namespace SharpRTSPServer
 
             lock (_connectionList)
             {
-                return _connectionList.Find(c => c.Video.RtpChannel == rtpTransport || c.Audio.RtpChannel == rtpTransport);
+                return _connectionList.Find(c => c.Video.RtpChannel == rtpTransport || c.Audio.RtpChannel == rtpTransport || c.Metadata.RtpChannel == rtpTransport);
             }
         }
 
@@ -823,6 +856,8 @@ namespace SharpRTSPServer
             connection.Video.RtpChannel = null;
             connection.Audio.RtpChannel?.Dispose();
             connection.Audio.RtpChannel = null;
+            connection.Metadata.RtpChannel?.Dispose();
+            connection.Metadata.RtpChannel = null;
             connection.Listener.Dispose();
             _connectionList.Remove(connection);
             foreach(var streamSource in StreamSources)
@@ -922,8 +957,9 @@ namespace SharpRTSPServer
 
         public void FeedInRawRTP(string streamID, int streamType, uint rtpTimestamp, List<Memory<byte>> rtpPackets)
         {
-            if (streamType != 0 && streamType != 1)
-                throw new ArgumentException("Invalid streamType! Video = 0, Audio = 1");
+            // 0 = Video, 1 = Audio, 2 = Metadata
+            if (streamType < 0 || streamType > 2)
+                throw new ArgumentException("Invalid streamType! Video = 0, Audio = 1, Metadata = 2");
 
             lock (_connectionList)
             {
@@ -938,8 +974,14 @@ namespace SharpRTSPServer
 
                     var stream = connection.Streams[streamType];
 
+                    stream.CurrentRtpTimestamp = rtpTimestamp;
+
                     if (stream.RtpChannel == null)
+                    {
+                        _logger.LogWarning("*** Sending RTP FAILED for session {sessionId} track {streamType} RTP timestamp={rtpTimestamp}. Sequence={sequenceNumber}",
+                            connection.SessionId, streamType, rtpTimestamp, stream.SequenceNumber);
                         return;
+                    }
 
                     _logger.LogDebug("Sending RTP session {sessionId} {TransportLogName} RTP timestamp={rtpTimestamp}. Sequence={sequenceNumber}",
                         connection.SessionId, TransportLogName(stream.RtpChannel), rtpTimestamp, stream.SequenceNumber);
@@ -977,6 +1019,12 @@ namespace SharpRTSPServer
             {
                 streamSource.AudioTrack.Sink = this;
                 streamSource.AudioTrack.StreamID = streamSource.StreamID;
+            }
+
+            if (streamSource.MetadataTrack != null)
+            {
+                streamSource.MetadataTrack.Sink = this;
+                streamSource.MetadataTrack.StreamID = streamSource.StreamID;
             }
 
             this.StreamSources.Add(streamSource);

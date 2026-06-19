@@ -41,8 +41,14 @@ namespace SharpRTSPServer
         /// </summary>
         public RTPStream Audio { get { return Streams[(int)TrackType.Audio]; } }
 
+        /// <summary>
+        /// Metadata stream.
+        /// </summary>
+        public RTPStream Metadata { get { return Streams[(int)TrackType.Metadata]; } }
+
         public RTPStream[] Streams { get; } = new RTPStream[]
         {
+            new RTPStream(),
             new RTPStream(),
             new RTPStream()
         };

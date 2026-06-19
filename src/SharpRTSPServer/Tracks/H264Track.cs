@@ -127,6 +127,14 @@ namespace SharpRTSPServer
         {
             this.SPS = sps;
             this.PPS = pps;
+
+            if (this.SPS != null && this.SPS.Length >= 4)
+            {
+                // Extrai os dados dinamicamente direto do SPS da câmera!
+                this.ProfileIdc = this.SPS[1];
+                this.ProfileIop = this.SPS[2];
+                this.Level = this.SPS[3];
+            }
         }
 
         /// <summary>
@@ -150,7 +158,7 @@ namespace SharpRTSPServer
             sdp.Append($"m=video 0 RTP/{RtpProfile} {PayloadType}\n");
             sdp.Append($"a=control:trackID={ID}\n");
             sdp.Append($"a=rtpmap:{PayloadType} {Codec}/{VideoClock}\n");
-            sdp.Append($"a=fmtp:{PayloadType} profile-level-id={profileLevelIdStr}; sprop-parameter-sets={spsStr},{ppsStr}\n");
+            sdp.Append($"a=fmtp:{PayloadType} packetization-mode=1; profile-level-id={profileLevelIdStr}; sprop-parameter-sets={spsStr},{ppsStr}\n");
 
             return sdp;
         }

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 
 namespace SharpRTSPServer
@@ -46,13 +47,26 @@ namespace SharpRTSPServer
             if (!Sink.CanAcceptNewSamples(StreamID))
                 return;
 
-            if (ID != (int)TrackType.Video && ID != (int)TrackType.Audio)
-                throw new ArgumentOutOfRangeException("ID must be 0 for video or 1 for audio");
+            if (ID != (int)TrackType.Video && ID != (int)TrackType.Audio && ID != (int)TrackType.Metadata)
+                throw new ArgumentOutOfRangeException("ID must be 0 for video, 1 for audio or 2 for metadata");
 
+            var swCreate = Stopwatch.StartNew();
             (List<Memory<byte>> rtpPackets, List<IMemoryOwner<byte>> memoryOwners) = CreateRtpPackets(samples, rtpTimestamp);
+
+            swCreate.Stop();
+
+            var swFeed = Stopwatch.StartNew();
 
             Sink.FeedInRawRTP(StreamID, ID, rtpTimestamp, rtpPackets);
 
+            swFeed.Stop();
+
+            if (swCreate.ElapsedMilliseconds > 10 ||
+                swFeed.ElapsedMilliseconds > 10)
+            {
+                Console.WriteLine(
+                    $"Track={StreamID} Create={swCreate.ElapsedMilliseconds}ms Feed={swFeed.ElapsedMilliseconds}ms Packets={rtpPackets.Count}");
+            }
             foreach (var owner in memoryOwners)
             {
                 owner.Dispose();

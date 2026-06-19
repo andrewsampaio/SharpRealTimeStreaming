@@ -3,6 +3,7 @@
     public enum TrackType : int
     {
         Video = 0,
-        Audio = 1
+        Audio = 1,
+        Metadata = 2
     }
 }

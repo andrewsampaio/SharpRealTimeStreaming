@@ -23,13 +23,18 @@ namespace SharpRTSPServer
         public ITrack AudioTrack { get; set; }
 
         /// <summary>
+        /// Metadata track.
+        /// </summary>
+        public ITrack MetadataTrack { get; set; }
+
+        /// <summary>
         /// SDP override.
         /// </summary>
         public string Sdp { get; private set; } = null;
 
         public HashSet<RTSPConnection> ConnectionList { get; } = new HashSet<RTSPConnection>(); // list of RTSP Listeners
 
-        public RTSPStreamSource(string streamID, ITrack rtspVideoTrack, ITrack rtspAudioTrack)
+        public RTSPStreamSource(string streamID, ITrack rtspVideoTrack, ITrack rtspAudioTrack, ITrack? rtspMetadataTrack = null)
         {
             if (string.IsNullOrWhiteSpace(streamID))
                 throw new ArgumentNullException(nameof(streamID));
@@ -37,6 +42,7 @@ namespace SharpRTSPServer
             StreamID = streamID;
             VideoTrack = rtspVideoTrack;
             AudioTrack = rtspAudioTrack;
+            MetadataTrack = rtspMetadataTrack;
         }
 
         public void OverrideSDP(string sdp, bool mungleSDP = true)
@@ -92,6 +98,12 @@ namespace SharpRTSPServer
                     {
                         disposableAudioTrack.Dispose();
                         AudioTrack = null;
+                    }
+
+                    if (MetadataTrack != null && MetadataTrack is IDisposable disposableMetadataTrack)
+                    {
+                        disposableMetadataTrack.Dispose();
+                        MetadataTrack = null;
                     }
                 }
 

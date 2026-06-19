@@ -25,6 +25,8 @@ namespace SharpRTSPServer
             return keys.MasterKeySalt.ToArray();
         }
 
+        public uint CurrentRtpTimestamp { get; set; } = 0;
+
         /// <summary>
         /// When true will send out a RTCP packet to match Wall Clock Time to RTP Payload timestamps.
         /// </summary>
