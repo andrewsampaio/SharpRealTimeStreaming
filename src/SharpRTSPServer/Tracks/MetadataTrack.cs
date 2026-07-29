@@ -10,21 +10,22 @@ public class MetadataTrack : TrackBase
 {
     private ushort _sequenceNumber = 0;
     private readonly int _clockRate = 90000;
-    //private uint _ssrc = 12345; // Identificador da fonte
 
     public override string Codec => "vnd.onvif.metadata";
 
-    // A lib exige ID 0 (Video) ou 1 (Audio). 
-    // Usamos 1 para ocupar o slot de áudio, mas transmitimos metadados.
+    // Original lib demands ID 0 (Video) or 1 (Audio). 
+    // If you want to use the original lib, please use MetadataTrack from OpenCVGateway.Protocols.Onvif project
+    // It uses ID 1 (audio slot) to transmit metadata.
+    // In this modified version of the lib we're using ID 2 (an addition rtsp channel specially created for this project).
     public override int ID { get; set; } = 2;
 
-    public override int PayloadType { get; set; } = 107; // Dinâmico
+    public override int PayloadType { get; set; } = 107; // Dinamic
 
-    public override bool IsReady => true; // Sempre pronto (não precisa de SPS/PPS)
+    public override bool IsReady => true; // Always ready (doesn't need SPS/PPS)
 
     public override StringBuilder BuildSDP(StringBuilder sdp)
     {
-        // Monta o bloco SDP que o VMS lê para saber que é ONVIF Metadata
+        // SDP assembly (ONVIF Metadata)
         sdp.AppendLine($"m=application 0 RTP/AVP {PayloadType}");
         sdp.AppendLine($"a=control:trackID={ID}");
         //sdp.AppendLine("a=rtpmap");  
@@ -37,31 +38,31 @@ public class MetadataTrack : TrackBase
         return sdp;
     }
 
-    // PACOTES RTP 
+    // RTP PACKETS 
     
     public override (List<Memory<byte>>, List<IMemoryOwner<byte>>) CreateRtpPackets(List<byte[]> samples, uint rtpTimestamp)
     {
         var rtpPackets = new List<Memory<byte>>();
         var memoryOwners = new List<IMemoryOwner<byte>>();
 
-        // Metadados geralmente cabem em um único pacote (XML pequeno).
-        // Se for muito grande (>1400 bytes), deveria ser fragmentado, mas vamos assumir simples por enquanto.
-
+        // Normally metadata fits one packate (small XML)
+        // if it's too big (>1400 bytes), it should be fragmented. No usecases were identified for this at this time.
+        
         foreach (var sampleData in samples)
         {
-            // Tamanho total = 12 bytes de Header RTP + Payload
+            // Total size = 12 bytes (Header RTP + Payload)
             int packetSize = 12 + sampleData.Length;
 
-            // Aloca memória (usando array simples para facilitar, ou ArrayPool em alta performance)
+            // Memory allocation
             byte[] packetBuffer = new byte[packetSize];
 
-            // --- 1. CABEÇALHO RTP (12 Bytes) ---
+            // --- RTP HEADER (12 Bytes) ---
 
             // Byte 0: Version (2) | Padding (0) | Extension (0) | CSRC Count (0) -> 0x80
             packetBuffer[0] = 0x80;
 
             // Byte 1: Marker (1) | PayloadType (107)
-            // Marker bit = 1 indica fim do frame (para XML sempre é true)
+            // Marker bit = 1 indicates frame end (always true for XML)
             packetBuffer[1] = (byte)(0x80 | (PayloadType & 0x7F));
 
             // Byte 2-3: Sequence Number (Big Endian)
@@ -81,10 +82,10 @@ public class MetadataTrack : TrackBase
             packetBuffer[10] = (byte)(SSRC >> 8);
             packetBuffer[11] = (byte)(SSRC & 0xFF);
 
-            // --- 2. PAYLOAD (XML) ---
+            // --- PAYLOAD (XML) ---
             Array.Copy(sampleData, 0, packetBuffer, 12, sampleData.Length);
 
-            // Adiciona à lista de retorno
+            // Response
             rtpPackets.Add(new Memory<byte>(packetBuffer));
         }
 
